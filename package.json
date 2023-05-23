@@ -1,0 +1,91 @@
+{
+  "name": "puck-core",
+  "displayName": "Puck Core",
+  "description": "Core module of the Puck AI development environment. Automatically installed when a Puck extension is installed.",
+  "version": "0.0.1",
+  "publisher": "NextBlock.ai",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/nextblock-ai/puck-core.git"
+  },
+  "icon": "assets/ai.png",
+  "engines": {
+    "vscode": "^1.78.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [],
+  "main": "./out/extension.js",
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "puck-sidebar",
+          "title": "Puck AI",
+          "icon": "assets/ai.svg"
+        }
+      ]
+    },
+    "views": {
+      "puck-sidebar": [
+        {
+          "id": "puck-history-sidebar",
+          "name": "Conversation History"
+        },
+        {
+          "id": "puck-logs-sidebar",
+          "name": "Logs"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Puck Core Settings",
+      "properties": {
+          "puck.core.apikey": {
+              "type": "password",
+              "default": "sk-",
+              "description": "API key for the OpenAI GPT service."
+          }
+      }
+    },
+    "commands": [
+      {
+        "command": "puck.core.setOpenAIKey",
+        "title": "Puck - Set OpenAI Key"
+      },
+      {
+        "command": "puck.core.showSidebar",
+        "title": "Puck - Show Sidebar"
+      },
+      {
+        "command": "puck.core.hideSidebar",
+        "title": "Puck - Hide Sidebar"
+      }
+    ]
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "pretest": "npm run compile && npm run lint",
+    "lint": "eslint src --ext ts",
+    "test": "node ./out/test/runTest.js"
+  },
+  "devDependencies": {
+    "@types/glob": "^8.1.0",
+    "@types/mocha": "^10.0.1",
+    "@types/node": "16.x",
+    "@types/vscode": "^1.78.0",
+    "@typescript-eslint/eslint-plugin": "^5.56.0",
+    "@typescript-eslint/parser": "^5.56.0",
+    "@vscode/test-electron": "^2.3.0",
+    "eslint": "^8.36.0",
+    "glob": "^8.1.0",
+    "mocha": "^10.2.0",
+    "typescript": "^4.9.5"
+  },
+  "dependencies": {
+    "axios": "^1.4.0"
+  }
+}
