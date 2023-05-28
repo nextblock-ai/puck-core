@@ -26,6 +26,11 @@ export interface LLMHistoryEntry {
     settings: LLMSettings;
 }
 
+export interface LLMHistoryManager {
+    getConversationHistory(): LLMHistoryEntry[];
+    setConversationHistory(history: LLMHistoryEntry[]): void;
+}
+
 export interface LLMSession extends Conversation {
     llm: LLM;
 }
@@ -41,4 +46,19 @@ export interface LLMCoreInterface {
     streamRequest(request: Conversation, onUpdate: (response: Message) => void, onEnd: () => void): void;
     configure(settings: object): void;
     registerHistory(historyEntry: object): void;
+}
+
+export interface GPTChatMessage {
+    role: 'user' | 'assistant' | 'system';
+    content: string;
+}
+
+export interface GPTChatConversation {
+    model: string;
+    messages: GPTChatMessage[];
+    max_tokens?: number;
+    top_p?: number;
+    temperature?: number;
+    stream?: boolean;
+    apikey?: string;
 }

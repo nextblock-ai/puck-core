@@ -3,22 +3,10 @@ import axios from "axios";
 import { Conversation, LLM, LLMCoreInterface, LLMHistoryEntry, LLMSession, LLMSettings, Message } from "./types";
 import * as vscode from 'vscode';
 import { log } from "./logger";
+import { GPTChatConversation } from "./types";
+import ConversationManager  from "./manager/ConversationManager";
 
-export interface GPTChatMessage {
-    role: string;
-    content: string;
-}
-
-export interface GPT4Conversation {
-    model: string;
-    messages: GPTChatMessage[];
-    max_tokens?: number;
-    top_p?: number;
-    temperature?: number;
-    stream?: boolean;
-    apikey?: string;
-}
-
+// GPT-4 Core class that implements LLMCoreInterface
 class GPT4Core implements LLMCoreInterface, LLM {
     name = "gpt4";
     settings = {
@@ -27,9 +15,11 @@ class GPT4Core implements LLMCoreInterface, LLM {
         max_tokens: 2048,
         topP: 1
     };
+    manager = ConversationManager.getInstance('conversation.json');
     history: LLMHistoryEntry[] = [];
+
+    // Send request to GPT-4 and receive a response
     async sendRequest(request: Conversation): Promise<LLMSession> {
-        // get the openAI key from settings
         const query = this._getConversationObject(request);
         let res;
         try {
@@ -51,7 +41,6 @@ class GPT4Core implements LLMCoreInterface, LLM {
                     settings: request.settings,
                 });
             } else {
-                // we show an error notification if the response is empt
                 throw new Error('No completion found');
             }
         } catch (error: any) {
@@ -70,19 +59,25 @@ class GPT4Core implements LLMCoreInterface, LLM {
             ],
         };
     };
+
+    // Send streaming request to GPT-4, with onUpdate and onComplete callbacks handling the response
     async streamRequest(request: Conversation, onUpdate: (response: Message) => void, onComplete: () => void) {
         try {
             const query = this._getConversationObject(request);
+            const latestMessage = request.messages[request.messages.length - 1];
+            log(`Sent stream request: ${latestMessage.content || ''}`); // <-- Add this line to log the stream request being sent
+
             const response = await axios.post(
                 'https://api.openai.com/v1/chat/completions',
                 query, {
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${this._getOpenAIKey()}`,
-                    },
-                    responseType: 'stream',
-                }
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${this._getOpenAIKey()}`,
+                },
+                responseType: 'stream',
+            }
             );
+
             let output = '';
             response.data.on('data', (chunk: any) => {
                 const parsedData = JSON.parse(chunk.toString());
@@ -102,11 +97,15 @@ class GPT4Core implements LLMCoreInterface, LLM {
             throw error;
         }
     }
+
+    // Get the OpenAI API key from the extension settings
     private _getOpenAIKey(): string {
-        const config = vscode.workspace.getConfiguration('puck.core');
+        const config = vscode.workspace.getConfiguration('puck-core');
         return config.get('apikey') || '';
     }
-    private _getConversationObject = (request: Conversation): GPT4Conversation => {
+
+    // Convert a Conversation object into a GPT4Conversation object
+    private _getConversationObject = (request: Conversation): GPTChatConversation => {
         return {
             model: "gpt-4",
             temperature: request.settings.temperature,
@@ -118,21 +117,22 @@ class GPT4Core implements LLMCoreInterface, LLM {
             top_p: request.settings.topP,
         };
     };
+
+    // Update the settings for GPT-4
     configure = (settings: object): void => {
         this.settings = {
             ...this.settings,
             ...settings,
         };
     };
+
+    // Register a history entry in the extension settings
     registerHistory = (historyEntry: object): void => {
         this.history.push(historyEntry as LLMHistoryEntry);
-        const config = vscode.workspace.getConfiguration('puck.core');
-        const history: any = config.get('history') || {
-            entries: [],
-        };
-        if(!history.entries) { history.entries = []; }
-        history.entries.push(historyEntry);
-        config.update('history', history, true);
+        let history: any = this.manager.getConversationHistory();
+        if (!history) { history = []; }
+        history.push(historyEntry);
+        this.manager.setConversationHistory(history);
     };
 }
 

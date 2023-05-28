@@ -19,7 +19,7 @@ export default class PuckSidebarCommand extends Command {
 
         // register a command to hide the puck sidebar
         this.commands.registerCommand(
-            constants['puck.core.hideSidebar'].command
+            constants['puck-core.hideSidebar'].command
         , this.hidePuckSidebar, this);
 
         // register the history sidebar - we show LLM conversation history in here
@@ -27,7 +27,7 @@ export default class PuckSidebarCommand extends Command {
         vscode.window.registerTreeDataProvider('puck-history-sidebar', this.historyProvider);
     
         // Allow other extensions to add items to custom sidebar
-        let commandDisposable = vscode.commands.registerCommand('puck.core.addSidebarHistoryItem', (item: vscode.TreeItem) => {
+        let commandDisposable = vscode.commands.registerCommand('puck-core.addSidebarHistoryItem', (item: vscode.TreeItem) => {
             this.historyProvider.addItem(item);
         });
         context.subscriptions.push(commandDisposable);
@@ -37,7 +37,7 @@ export default class PuckSidebarCommand extends Command {
         vscode.window.registerTreeDataProvider('puck-logs-sidebar', this.logsProvider);
 
         // Allow other extensions to add items to log sidebar
-        commandDisposable = vscode.commands.registerCommand('puck.core.addSidebarLogsItem', (item: vscode.TreeItem) => {
+        commandDisposable = vscode.commands.registerCommand('puck-core.addSidebarLogsItem', (item: vscode.TreeItem) => {
             this.logsProvider.addItem(item);
         });
         context.subscriptions.push(commandDisposable);

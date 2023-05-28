@@ -11,7 +11,7 @@ export default class SetOpenAIKeyCommand extends Command {
     constructor(commandId: string, title: string, context: vscode.ExtensionContext) {
         super(commandId, title, context);
         const commandDisposable = this.commands.registerCommand(
-            constants['puck.core.getOpenAIKey'].command,
+            constants['puck-core.getOpenAIKey'].command,
             this._getOpenAIKey, 
             this
         );
@@ -34,15 +34,15 @@ export default class SetOpenAIKeyCommand extends Command {
     }
 
     private _getOpenAIKey(): string {
-        const config = vscode.workspace.getConfiguration('puck.core');
+        const config = vscode.workspace.getConfiguration('puck-core');
         return config.get('apikey') || '';
     }
     
     // set the OpenAI key
     async setOpenAIKey(openAIKey: string): Promise<void> {
         try {
-            await vscode.workspace.getConfiguration('puck.core').update('apikey', openAIKey, vscode.ConfigurationTarget.Global);
-            const config = vscode.workspace.getConfiguration('puck.core');
+            await vscode.workspace.getConfiguration('puck-core').update('apikey', openAIKey, vscode.ConfigurationTarget.Global);
+            const config = vscode.workspace.getConfiguration('puck-core');
             if (config.has('apikey')) {
                 vscode.window.showInformationMessage('OpenAI API key saved successfully');
             } else {

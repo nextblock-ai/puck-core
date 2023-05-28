@@ -2,7 +2,7 @@
   "name": "puck-core",
   "displayName": "Puck Core",
   "description": "Core module of the Puck AI development environment. Automatically installed when a Puck extension is installed.",
-  "version": "0.0.1",
+  "version": "0.0.5",
   "publisher": "NextBlock",
   "repository": {
     "type": "git",
@@ -15,6 +15,9 @@
   "categories": [
     "Other"
   ],
+  "extension.exports": {
+    "core": "./core"
+  },
   "activationEvents": [],
   "main": "./out/extension.js",
   "contributes": {
@@ -42,25 +45,49 @@
     "configuration": {
       "title": "Puck Core Settings",
       "properties": {
-          "puck.core.apikey": {
-              "type": "password",
-              "default": "sk-",
-              "description": "API key for the OpenAI GPT service."
-          }
+        "puck-core.apikey": {
+          "type": "password",
+          "default": "sk-",
+          "description": "API key for the OpenAI GPT service."
+        }
       }
     },
     "commands": [
       {
-        "command": "puck.core.setOpenAIKey",
-        "title": "Puck - Set OpenAI Key"
+        "command": "puck-core.setOpenAIKey",
+        "title": "Puck - Set OpenAI API Key"
       },
       {
-        "command": "puck.core.showSidebar",
-        "title": "Puck - Show Sidebar"
+        "command": "puck-core.showHistory",
+        "title": "Puck - Show History"
       },
       {
-        "command": "puck.core.hideSidebar",
-        "title": "Puck - Hide Sidebar"
+        "command": "puck-core.startConversation",
+        "title": "Puck - Start Conversation"
+      },
+      {
+        "command": "puck-core.sendMessage",
+        "title": "Puck - Send Message"
+      },
+      {
+        "command": "puck-core.endConversation",
+        "title": "Puck - End Conversation"
+      },
+      {
+        "command": "puck-core.addSidebarHistoryItem",
+        "title": "Puck - Add History Item"
+      },
+      {
+        "command": "puck-core.addSidebarLogsItem",
+        "title": "Puck - Add Logs Item"
+      },
+      {
+        "command": "puck-core.sendRequest",
+        "title": "Puck - Send Request"
+      },
+      {
+        "command": "puck-core.streamRequest",
+        "title": "Puck - Stream Request"
       }
     ]
   },
@@ -73,9 +100,12 @@
     "test": "node ./out/test/runTest.js"
   },
   "devDependencies": {
+    "@types/diff": "^5.0.3",
     "@types/glob": "^8.1.0",
     "@types/mocha": "^10.0.1",
     "@types/node": "16.x",
+    "@types/split2": "^4.2.0",
+    "@types/through2": "^2.0.38",
     "@types/vscode": "^1.78.0",
     "@typescript-eslint/eslint-plugin": "^5.56.0",
     "@typescript-eslint/parser": "^5.56.0",
@@ -86,6 +116,11 @@
     "typescript": "^4.9.5"
   },
   "dependencies": {
-    "axios": "^1.4.0"
+    "axios": "^1.4.0",
+    "crypto": "^1.0.1",
+    "diff": "^5.1.0",
+    "ohm-js": "^17.1.0",
+    "split2": "^4.2.0",
+    "through2": "^4.0.2"
   }
 }

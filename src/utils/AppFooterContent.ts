@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { FooterContentManager, IStatusBarItem } from './FooterContentManager';
+import { FooterContentManager, IStatusBarItem } from '../manager/FooterContentManager';
 
 export default class AppFooterContent {
 
