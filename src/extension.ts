@@ -22,25 +22,8 @@ export async function activate(context: vscode.ExtensionContext) {
 	ConversationManager.activate(context);
 	AppFooterContent.activate();
 
-	const core = new GPT4Core();
-
-	const convo: Conversation = {
-		messages: [{
-			role: 'system',
-			content: 'Hello, how are you?',
-		}],
-		settings: {
-			temperature: 0.9,
-			maxTokens: 150,
-			key: 'gpt-4',
-		}
-	};
-
-	const response = await core.sendRequest(convo);
-	console.log(response);
-
 	return {
-		core: core,
+		core:  new GPT4Core(),
 		SemanticAgentProvider: SemanticAgentProvider,
 	}
 	
