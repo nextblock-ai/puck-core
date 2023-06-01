@@ -11,9 +11,9 @@ class GPT4Core implements LLMCoreInterface, LLM {
     name = "gpt4";
     settings = {
         key: '',
-        temperature: 0.7,
+        temperature: 1,
         max_tokens: 2048,
-        topP: 1
+        top_p: 1
     };
     manager = ConversationManager.getInstance('conversation.json');
     history: LLMHistoryEntry[] = [];
@@ -33,7 +33,7 @@ class GPT4Core implements LLMCoreInterface, LLM {
             }
             );
             if (response.data && response.data.choices && response.data.choices.length > 0) {
-                log(`Chat completion: ${response.data.choices[0].message.content}`);
+                log(`${response.data.choices[0].message.content}`);
                 res = response.data.choices[0].message.content;
                 this.registerHistory({
                     prompt: request.messages[request.messages.length - 1],
@@ -108,13 +108,13 @@ class GPT4Core implements LLMCoreInterface, LLM {
     private _getConversationObject = (request: Conversation): GPTChatConversation => {
         return {
             model: "gpt-4",
-            temperature: request.settings.temperature,
-            max_tokens: request.settings.maxTokens,
+            temperature: (request.settings && request.settings.temperature) || 1,
+            max_tokens: (request.settings && request.settings.maxTokens ) || 2048,
             messages: request.messages.map(m => ({
                 role: m.role,
                 content: m.content
             })) as any,
-            top_p: request.settings.topP,
+            top_p: (request.settings && request.settings.topP) || 1,
         };
     };
 
