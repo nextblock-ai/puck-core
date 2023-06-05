@@ -69,7 +69,7 @@ export default class ConversationManager implements LLMHistoryManager {
 
     // save the conversation to the conversations file
     public setConversationHistory(conversation: LLMHistoryEntry[]) {
-        const hash = this._md5hash(conversation[0].prompt.content + conversation[0].response.content); // use the first message as the hash
+        const hash = this._md5hash(conversation[0].prompt.content + conversation[0].response); // use the first message as the hash
         const existing = this._history.find(c => c.hash === hash);
         if(existing) { existing.count++; } else {
             this._history.push({ hash, conversation, count: 1 });
