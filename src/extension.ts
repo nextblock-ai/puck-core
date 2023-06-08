@@ -11,19 +11,19 @@ import { GPT4Core } from './core';
 import { GPTChatProvider } from './providers/GPTChatProvider';
 
 import * as ConversationManager from './manager/ConversationManager';
-import { Conversation } from './types';
 
 export async function activate(context: vscode.ExtensionContext) {
 
+	const gpt4Core = new GPT4Core();
 	outputLog.activate(context, 'puck.log');
 	commands.activate(context);
 	GPTChatProvider.activate(context);
-	SemanticAgentProvider.activate(context);
+	SemanticAgentProvider.activate(gpt4Core, context);
 	ConversationManager.activate(context);
 	AppFooterContent.activate();
 
 	return {
-		core:  new GPT4Core(),
+		core: gpt4Core,
 		SemanticAgentProvider: SemanticAgentProvider,
 	}
 	

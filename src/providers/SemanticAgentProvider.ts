@@ -1,34 +1,61 @@
 import { ExtensionContext } from 'vscode';
-import { SemanticAgent } from '../semantic/SemanticAgent';
+import SemanticAgent from '../semantic/SemanticAgent';
 
+// This class is a singleton
 export default class SemanticAgentProvider {
 
-    private context: ExtensionContext;
+    private core: any;
+    private context: any;
     public semanticAgents: any[];
     private static instance: SemanticAgentProvider;
 
-    private constructor(context: ExtensionContext) {
+    /**
+     * Constructor
+     * @param core 
+     * @param context 
+     */
+    private constructor(core: any, context: any) {
         this.semanticAgents = [];
         this.context = context;
+        this.core = core;
     }
 
+    /**
+     * Create a new semantic agent
+     * @param writeEmitter 
+     * @returns 
+     */
     public createSemanticAgent(writeEmitter: any): SemanticAgent {
-        const semanticAgent = new SemanticAgent(this.context, writeEmitter);
+        const projectRoot = this.context.workspace[0].uri.fsPath;
+        const semanticAgent = new SemanticAgent(this.core, projectRoot, writeEmitter);
         this.semanticAgents.push(semanticAgent);
         return semanticAgent;
     }
 
-    public static activate(context: ExtensionContext): SemanticAgentProvider {
+    /**
+     * Activate the semantic agent provider
+     * @param core 
+     * @param context 
+     * @returns 
+     */
+    public static activate(core: any, context: ExtensionContext): SemanticAgentProvider {
         if (!SemanticAgentProvider.instance) {
-            SemanticAgentProvider.instance = new SemanticAgentProvider(context);
+            SemanticAgentProvider.instance = new SemanticAgentProvider(core, context);
         }
         return SemanticAgentProvider.instance;
     }
 
+    /**
+     *  Get the instance of the semantic agent provider
+     * @returns 
+     */
     public static getInstance(): SemanticAgentProvider {
         return SemanticAgentProvider.instance;
     }
 
+    /**
+     * Deactivate the semantic agent provider
+     */
     public deactivate() {
         this.semanticAgents.forEach((semanticAgent) => {
             semanticAgent.deactivate();

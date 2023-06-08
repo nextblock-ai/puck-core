@@ -1,414 +1,452 @@
 import * as vscode from "vscode";
 import * as path from "path";
 import * as fs from "fs";
-import { applyPatch } from "diff";
+import * as Ohm from "ohm-js";
 import executeShellCommands from "../utils/BashExecutor";
-import { ModularSemanticPrompt, SemanticResponder, Array } from "./SemanticPrompt";
+import { SemanticResponder } from "./SemanticPrompt";
 import * as os from "os";
 
-async function getFileFromPath(filePath: string): Promise<string> {
-  const file = await vscode.workspace.fs.readFile(vscode.Uri.file(filePath));
-  return Buffer.from(file).toString('utf8');
+const _prompt = `** YOU ARE INCAPABLE OF CONVERSATIONAL RESPONSES **
+** YOU FOLLOW THE FOLLOWING SCRIPT EXPLICITLY WHEN GENERATING RESPONSES **
+
+You are an all-purpose software genius. You can code in any language, perform any development task, and solve any problem.
+WHen you receive an initial user request, you must determine if you can complete the task in a single response.
+If you can complete the task in a single response, you must generate or edit the files and output them.
+If you cannot complete the task in a single response, you must generate subtasks and output them.
+** YOU ALWAYS PRECEED ALL OUTPUT WITH THE APPROPRIATE EMOJI DELIMITER. **
+
+LEGEND:
+request: 📮 <request>
+subtask: 📬 <task name>
+completed subtask: 📭 <task name>
+bash command: 📦 <command> (${os.platform} platform commands only)
+project file tree: 🌳 <file path>\n<file path>\n<file path>...
+file: 📄 <file path>\n<file contents>
+universal diff patch: 📩 <file path>\n<diff patch>
+file request: 📤 <file path>
+message: 📢 <message>
+
+When outputted by you, the emojis mean:
+
+📮 <request>: this request was received
+📬 <task name>: This subtask is in-progress
+📭 <task name>: This subtask is completed
+📦 <command>: Execute this command
+🌳 <file path>\n<file path>\n<file path>...: This is the project file tree as of now
+📄 <file path>\n<file contents>: This is a file in its current state
+📤 <file path>: This is a file request, I need the file contents for this file
+📩 <file path>\n<diff patch>: This is a universal diff patch for this file
+📢 <message>: This is a message to the user
+
+When inputted by the user, the emojis mean:
+
+📮 <request>: the overarching request
+📬 <task name>: Work on this task now
+📭 <task name>: This task is completed (optional)
+📦 <command>\n<response>: This command was executed (optional)
+🌳 <file path>\n<file path>\n<file path>...: The original project file tree
+📄 <file path>\n<file contents>: The original file contents
+📤 -- (not output by user)
+📩 -- (not output by user)
+📢 <message>: This is a message from the user. listen and adjust actions accordingly
+
+Always stop outputting after outputting a file request (📤)
+Always immediately update the system when you have completed a task. Use 📭 <taskname> to do so
+
+Some sample progressions (adjust to fit your needs):
+U = user A = AI
+Update project (file request needed, with an input file given) U:📬 U:🌳 U:📄 A:📤 U:📄 A:📄 A:📢 
+Update project (file request needed) U:📬 U:🌳 A:📤 U:📄 A:📄 A:📢 if file requests are needed
+Update project (file request needed) U:📬 U:🌳 U:📄 A:📄 A:📢 if no file requests are needed
+Update project (file request needed, udf patch response) U:📬 U:🌳 U:📄 A:📩 A:📢
+Update project and run a command (no file request needed, optional response - unnecessary in this case) U:📬 U:🌳 U:📄 A:📄 A:📦 A:📢
+Write test coverage for a file: U:📬 U:🌳 A:📬 U:📬 A:📤 U:📄 A:📄 A:📢
+
+** Do not include "U:" or "A:" ((or use triple backticks (\`\`\`))) when providing input or output. **
+** Always adhere to the described format and use the provided emoji delimiters to ensure a smooth conversation. **`
+
+let mainTask = "";
+let rewindHeight = 0;
+let currentTask = "";
+const openTasks: string[] = [];
+const closedTasks = [];
+
+const updateSemanticPrompt = (semanticPrompt: SemanticPrompt, delim: any, message: any) => {
+  semanticPrompt.messages.push({
+    role: "assistant",
+    content: `${delim.emoji} ${message}`,
+  });
 }
 
-const _postResponder: SemanticResponder = {
-  name: "CompleteTask",
-  "delimiter": "📭",
-  scopes: [],
-  process: async (context: any, scope: string, obj: any) => {
-    //
+const generateFileResponse = (semanticPrompt: SemanticPrompt, fileRequest: any) => {
+  const file = fs.existsSync(semanticPrompt._relPath(fileRequest))
+    ? fs.readFileSync(semanticPrompt._relPath(fileRequest), "utf8")
+    : "";
+  return { role: "user", content: `📤 ${fileRequest}\n${file}`, };
+}
+
+const tw = (agent: any, str: string) => {
+  if(!agent.writeEmitter) {
+    return;
   }
+  // convert \n to \r\n
+  str = str.replace(/\n/g, '\r\n');
+  agent.writeEmitter.fire(str + '\r\n');
+}
+
+const config = {
+  delimiters: [
+    {
+      // 📄 <file path>\n<file contents>: This is a file in its current state
+      "name": "FileUpdate",
+      "emoji": "📄",
+      "handlers": [(semanticPrompt: SemanticPrompt, message: any) => {
+
+        // add the file update message from the assistant to the conversation
+        updateSemanticPrompt(semanticPrompt, config.delimiters[0].emoji, message.message);
+        tw(semanticPrompt, `📄 ${message.message[0]}\n${message.message[1]}`);
+        // save the file
+        let [filename, ...filecontent] = message.message;
+        const file = semanticPrompt._relPath(filename)
+        fs.writeFileSync(file, filecontent.join("\n"));
+
+      }],
+    },
+    {
+      // 📩 <file path>\n<diff patch>: This is a universal diff patch for this file
+      "name": "DiffPatch",
+      "emoji": "📩",
+      "handlers": [(semanticPrompt: SemanticPrompt, message: any) => {
+
+        // add the file update message from the assistant to the conversation
+        updateSemanticPrompt(semanticPrompt, config.delimiters[1].emoji, message.message);
+        tw(semanticPrompt, `📩 ${message.message[0]}\n${message.message[1]}`);
+        const [filename, ...diff] = message.message;
+        // add the patch to the result - we'll process it later
+        semanticPrompt.result.push({
+          filename: semanticPrompt._relPath(filename),
+          diff: diff.join("\n"),
+        });
+      }],
+    },
+    {
+      // 📢 <message>: This is a message to the user
+      "name": "Announcement",
+      "emoji": "📢",
+      "handlers": [(semanticPrompt: SemanticPrompt, message: any) => {
+
+        // add the announcement message from the assistant to the conversation
+        const [announcement] = message.message;
+        updateSemanticPrompt(semanticPrompt, config.delimiters[2].emoji, message.message);
+        tw(semanticPrompt, `📢 ${announcement}`);
+        // add the message to the result
+        semanticPrompt.result.push({
+          announcement: announcement
+        });
+
+      }],
+    },
+    {
+      // 📤 <file path>: This is a file request, I need the file contents for this file
+      "name": "FileRequest",
+      "emoji": "📤",
+      "handlers": [(semanticPrompt: SemanticPrompt, message: any) => {
+
+        // add the file request message from the assistant to the conversation
+        const [fileRequest] = message.message;
+        updateSemanticPrompt(semanticPrompt, config.delimiters[3].emoji, message.message);
+        tw(semanticPrompt, `📤 ${fileRequest}`);
+        // respond with the file contents
+        semanticPrompt.messages.push(generateFileResponse(semanticPrompt, fileRequest));
+
+      }],
+    },
+    {
+      // 📦 <command>: Execute this command
+      "name": "Command",
+      "emoji": "📦",
+      "handlers": [(semanticPrompt: SemanticPrompt, message: any) => {
+
+        // add the command message from the assistant to the conversation
+        const [bashCommand] = message.message;
+        updateSemanticPrompt(semanticPrompt, config.delimiters[4].emoji, message.message);
+        tw(semanticPrompt, `📦 ${bashCommand}`);
+        process.chdir(semanticPrompt.projectRoot);
+        // execute the command
+        const result = executeShellCommands(bashCommand);
+        if (result) {
+          semanticPrompt.messages.push({
+            role: "user",
+            content: `📦 ${bashCommand}\n${result}`,
+          });
+        }
+      }],
+    },
+    {
+      // 📮 <request>: this request was received
+      "name": "MainTask",
+      "emoji": "📮",
+      "handlers": [(semanticPrompt: SemanticPrompt, message: any) => {
+
+        // add the main task message from the assistant to the conversation
+        const [mt] = message.message;
+        updateSemanticPrompt(semanticPrompt, config.delimiters[5].emoji, message.message);
+        tw(semanticPrompt, `📮 ${mt}`);
+        mainTask = mt;
+      }],
+    },
+    {
+      // 📬 <task name>: Work on this task now
+      "name": "TaskIn",
+      "emoji": "📬",
+      "handlers": [(semanticPrompt: SemanticPrompt, message: any) => {
+
+        // add the task in message from the assistant to the conversation
+        const [task] = message.message;
+        updateSemanticPrompt(semanticPrompt, config.delimiters[6].emoji, message.message);
+        tw(semanticPrompt, `📬 ${task}`);
+        // if the task isn;t in the open tasks, add it
+        if (!openTasks.includes(task)) {
+          openTasks.push(task);
+          rewindHeight = semanticPrompt.messages.length;
+          currentTask = openTasks.length === 1 ? task : currentTask;
+          // add the task to the result for the user to perform
+          semanticPrompt.messages.push({ role: "user", content: `📮 ${mainTask}`, });
+          // add the task to the result for the user to perform
+          semanticPrompt.messages.push({ role: "user", content: `📬 ${currentTask}`, });
+        } else {
+          // pop off all the messages above the rewind height
+          semanticPrompt.messages.splice(rewindHeight);
+        }
+      }],
+    },
+    {
+      // 📭 <task name>: This subtask is completed
+      "name": "TaskOut",
+      "emoji": "📭",
+      "handlers": [(semanticPrompt: SemanticPrompt, message: any) => {
+
+        // add the task out message from the assistant to the conversation
+        const [task] = message.message;
+        updateSemanticPrompt(semanticPrompt, config.delimiters[7].emoji, message.message);
+        tw(semanticPrompt, `📭 ${task}`);
+        // if the task is in the open tasks, remove it
+        if (openTasks.includes(task)) {
+          const index = openTasks.indexOf(task);
+          openTasks.splice(index, 1);
+          closedTasks.push(task);
+          if (openTasks.length === 0) {
+            currentTask = "";
+          } else if (openTasks.length === 1) {
+            currentTask = openTasks[0];
+            // add the task to the result for the user to perform
+            semanticPrompt.messages.push({ role: "user", content: `📮 ${mainTask}`, });
+            // add the task to the result for the user to perform
+            semanticPrompt.messages.push({ role: "user", content: `📬 ${currentTask}`, });
+          }
+        }
+
+      }]
+    },
+    {
+      // 🌳 <file path>\n<file path>\n<file path>...: This is the project file tree as of now
+      "name": "FileTree",
+      "emoji": "🌳",
+      "handlers": [(semanticPrompt: SemanticPrompt, message: any) => {
+
+        // add the file tree message from the assistant to the conversation
+        const [fileT] = message.message;
+        updateSemanticPrompt(semanticPrompt, config.delimiters[8].emoji, message.message);
+        tw(semanticPrompt, `🌳 ${fileT}`);
+      }],
+    },
+  ],
 };
 
 
-export const semanticagentprompt = () => `** YOU ARE NON-CONVERSATIONAL AND HAVE NO ABILITY TO OUTPUT ENGLISH IN A CONVERSATIONAL MANNER **
-You are an all-purpose agent deployed in the context of a VS Code project on a ${os.platform()} machine.
-You are called iteratively in the course of your work. prioritize quality of work over speed of work.
-You can decompose tasks that are too large for you to fully implement, and you can implement large projects solo, thanks to your assisted task management system. This assisted task management system takes any task you present and actively presents it back to you until you indicate its complete, ensuring that you don't forget the task you planned.
+export default class SemanticPrompt {
+  prompt: string;
+  messages: any[] = [];
+  _semantics: Ohm.Semantics;
+  result: any = [];
+  completed: boolean = false;
+  delimiters: any = [];
+  _grammar: Ohm.Grammar;
+  projectRoot: string = "";
+  writeEmitter: any;
+  _ohmParser: any;
+  core: any;
 
-INSTRUCTIONS:
+  public _relPath(str: string) { return path.join(this.projectRoot, str); }
 
-VALIDATE INPUT. Validate that you are receiving a valid input. You will either receive an initial request or an in-progress task implementation request.
+  grammarString() {
+    const delimNames = config.delimiters.map((d: any) => d.name);
+    const grammar = `ResponseParser {
+      ResponseParserMessage=(Delimiters Title)+
+      Title=(~(Delimiters) any)*
+      Delimiters=(${delimNames.join("|")})
+      ${config.delimiters.map((d: any) => `${d.name}="${d.emoji}"`).join("\n")}
+    }`;
+    return grammar;
+  }
 
-Input MUST start with either:
+  _iterator = async (...children: any) => {
+    const recs = children.map(function (child: any) { return child.toJSON(); });
+    const messageSource = children[0].source.sourceString;
+    const messageCommands = this._parseCommands(messageSource, config.delimiters.map((d: any) => d.emoji));
+    this.onProcessMessages(messageCommands, recs);
+  }
 
-📢 <task description> to indicate a new task
+  actions: Ohm.ActionDict<unknown> = {
+    ResponseParserMessage: (delimiters: any, titles: any) => ({
+      role: delimiters.toJSON(), content: titles.sourceString.trim(),
+    }),
+    Title: (title: any) => { return title.sourceString; },
+    Delimiters: (delimiters: any) => { return delimiters.sourceString; },
+    _iter: this._iterator
+  };
 
-or ALL OF:
 
-📢: <original request>
-💻: <command history>\n...
-📬: <open task>\n<open task>\n...
-📭: <closed task>\n<closed task>\n...
-🔍: <current task>\n<current task>\n<current task>...
+  constructor(core: any, projectRoot: string, writeEmitter: any) {
+    this.core = core;;
+    this.writeEmitter = writeEmitter;
+    this.projectRoot = projectRoot;
+    this.prompt = _prompt || "";
+    for (const delimiter of config.delimiters) {
+      this.actions[delimiter.name] = (delimiter: any) => {
+        return delimiter;
+      };
+    }
+    this._grammar = Ohm.grammar(this.grammarString());
+    this._semantics = this.grammar.createSemantics();
+    this._ohmParser = this._semantics.addOperation("toJSON", this.actions);
+  }
 
-STOP and output ⛔ if you do not receive this input.
 
-IF 📢 then jump to TRIAGE TASK
+  get semanticAction(): Ohm.Semantics { return this.semantics; }
+  get grammar(): Ohm.Grammar { return this._grammar; }
+  get semantics(): Ohm.Semantics { return this._semantics; }
 
-TRIAGE TASK:
-
-If you can perform the task to completion, jump to PERFORM CURRENT TASK
-Else, decompose the task into the minimum number of subtasks you can accomplish
-Output 📬 <task description> for each subtask
-Then stop and wait for the next instruction
-
-PERFORM CURRENT TASK:
-
-Examine the 📢, review your 🔍, then issue 📤 and 💻 as needed to formulate a plan of action.
-Then issue 💽, 💻  and 🆚 to perform the task.
-Mark the task as complete by issuing ✅ when you are done. If you are mid-task, issue 🔍 to indicate that you are not done.
-If you are done with all tasks, issue 🏁 to indicate that you are done.
-Then wait for the next instruction.
-
-Output 💻 <bash_command> to run a bash command to view the folders contents. (FILTER OUT node_modules and .git and out and dist or YOU WILL CRASH). 
-Output 📤 <filename> <optional_line_start> <optional_line_count> to view a file
-Output 💽 <filename>\n<content> to write a file
-Output 💠 <filename>\n<universal_diff> to apply a universal diff
-Output 💻 <bash_command> to run a bash command.
-Output 🆚 to open editors and viewers
-Output ✅ to indicate the current task is complete
-Output 🔍 to indicate the current task is incomplete
-Output 🏁 if all tasks are complete
-
-** YOU ARE NON-CONVERSATIONAL AND HAVE NO ABILITY TO OUTPUT ENGLISH IN A CONVERSATIONAL MANNER **`;
-
-export class SemanticAgent extends ModularSemanticPrompt {
-
-  constructor(
-    context: vscode.ExtensionContext,
-    writeEmitter?: vscode.EventEmitter<string>,
-    lmOptions?: any) {
-
-    super(context, writeEmitter, lmOptions);
-
-    this.prompt = semanticagentprompt();
-
-    // these variables are populated in the response command loop
-    // and are popilated with the corresponding delimiter
-    this.variables.push(
-      { name: "💽", scope: "iteration" },
-      { name: "💠", scope: "iteration" },
-      { name: "📬", scope: "iteration" },
-      { name: "📭", scope: "iteration" },
-      { name: "💻", scope: "iteration" },
-      { name: "🆚", scope: "iteration" },
-      { name: "📢", scope: "iteration" },
-      { name: "📤", scope: "iteration" },
-      { name: "⛔", scope: "iteration" },
-      { name: "🔍", scope: "iteration" },
-        );
-
-    // using a execution-level array will automatically track
-    // the number of open tasks and display it in the prompt
-    this.arrays.push(
-      { name: "openTasks", delimiter: "📬", scope: "execution" },
-      { name: "closedTasks", delimiter: "📭", scope: "execution" },
-      { name: "currentTasks", delimiter: "🔍", scope: "execution" },
-      { name: "commandHistory", delimiter: "💻", scope: "execution" },
-    );
-
-    this.responders.push({
-      name: "CodeEnhancerMessage",
-      scopes: ["init"],
-      process: async (context: any, scope: string, obj: any) => {
-        const message = obj.message;
+  private _parseCommands(text: string, legalEmojis: string[]) {
+    const lines = text.split('\n');
+    const cmds: any = [];
+    let emojiFound: string | undefined = '';
+    lines.forEach(line => {
+      const eFound = legalEmojis.find(emoji => line.startsWith(emoji));
+      if (eFound) {
+        emojiFound = eFound;
+        const value = line.replace(eFound, '').trim();
+        cmds.push({ command: emojiFound, message: [value] });
+      } else {
+        const latestCmd = cmds[cmds.length - 1];
+        latestCmd.message.push(line);
       }
     });
+    return cmds;
+  }
 
-    this.responders.push({
-      name: "Diff",
-      delimiter: "💠",
-      scopes: ["init"],
-      process: diffCommandHandler
-    });
+  addMessage(msg: any) {
+    this.messages.push(msg);
+  }
 
-    this.responders.push({
-      name: "TargetFile",
-      delimiter: "💽",
-      scopes: ["init"],
-      process: fileCommandHandler
-    });
+  calculateTokens() {
+    // parse all the messages and sum up the token to ensure we don't exceed the limit
+    let tokens = 0;
+    for (const message of this.messages) {
+      // parse the message -use regex to count the number of words
+      const words = message.content.split(" ");
+      tokens += words.length;
+    }
+    return tokens;
+  }
 
-    this.responders.push({
-      name: "EchoWorkResponder",
-      exclude: true,
-      scopes: ["init"],
-      process: async (context: any, scope: string, obj: any) => {
+  async execute(): Promise<any> {
+    let retries = 0;
+    const callLLM = async (): Promise<any> => {
+      const tokenCount = this.calculateTokens();
+      if (tokenCount > 8192) {
+        return {
+          error: "The message is too long. Please shorten it and try again."
         }
-    });
-
-    this.responders.push({
-      name: "BashCommand",
-      delimiter: "💻",
-      scopes: ["loop"],
-      process: bashCommandHandler
-    });
-
-    this.responders.push({
-      name: "VSCodeCommand",
-      delimiter: "🆚",
-      scopes: ["loop"],
-      process: async (context: any, scope: string, obj: any) => {
-
       }
-    });
-
-    this.responders.push({
-      name: "TaskCompletedCommand",
-      delimiter: "✅",
-      scopes: ["loop"],
-      process: async (context: any, scope: string, obj: any) => {
-          // get the open tasks array and remove the current task
-          const openTasks = this.arrays.find(a => a.name === "openTasks");
-          const currentTasks = this.arrays.find(a => a.name === "currentTasks");
-          const closedTasks = this.arrays.find(a => a.name === "closedTasks");
-
-          if(openTasks && openTasks.value && openTasks.value.length > 0) {
-              const currentTask = openTasks && openTasks.value[0];
-              const index = openTasks.value.indexOf(currentTask);
-              openTasks.value.splice(index, 1);
-              if(closedTasks && closedTasks.value) {
-                  closedTasks.value.push(currentTask);
-                  if(currentTasks) currentTasks.value = [];
-              }
-              if(currentTasks && openTasks.value.length > 0) {
-                  currentTasks.value?.push(openTasks.value[0]);
-              }
+      let freeTokens = 8192 - tokenCount;
+      freeTokens = freeTokens > 2048 ? 2048 : freeTokens;
+      let response: any;
+      if(this.messages.length === 0) {
+        return {
+          error: "No messages to process"
+        }
+      }
+      if(this.messages[0].role !== 'system') {
+        this.messages.unshift({
+          role: 'system',
+          content: this.prompt
+        });
+      }
+      try {
+        response = await this.core.sendRequest({
+          messages: this.messages,
+          settings: {
+            key: 'key',
+            temperature: 1,
+            max_tokens: freeTokens,
           }
+        });
+        response = response.messages[response.messages.length - 1].content + "\n";
+      } catch (e) {
+        return {
+          error: e
+        }
       }
-    });
+      try {
+        if (!this.grammar) { throw new Error('No grammar loaded'); }
+        const match = this.grammar.match(response);
+        if (!match.failed()) {
+          this._ohmParser(match).toJSON();
+          if (this.completed) {
+            const r = this.result;
+            this.completed = false;
+            return r;
+          } else {
+            return await callLLM();
+          }
+        } else {
+          this.messages.push({
+            role: 'system',
+            content: 'INVALID OUTPUT FORMAT. Please review the instructions and try again. Make sure you are using the required delimiters'
+          });
 
-    this.responders.push({
-      name: "Announce",
-      delimiter: "📢",
-      scopes: ["loop"],
-      process: announcedHandler
-    });
-
-    this.responders.push({
-      name: "FileRequest",
-      delimiter: "📤",
-      scopes: ["loop"],
-      process: fileRequestCommandHandler
-    });
-
-    this.responders.push({
-      name: "TaskOpen",
-      delimiter: "📬",
-      scopes: ["loop"],
-      process: async (context: any, scope: string, obj: any) => {
-
+          console.log(`invalid output format: ${response}`);
+          return await callLLM();
+        }
+      } catch (error: any) {
+        // if there is an error, retry up to 3 times
+        if (retries < 3) {
+          retries++;
+          return callLLM();
+        } else {
+          throw error;
+        }
       }
-    });
-
-    this.responders.push({
-      name: "TaskClosed",
-      delimiter: "📭",
-      scopes: ["loop"],
-      process: async (context: any, scope: string, obj: any) => {
-        
-      }
-    });
-
-    this.responders.push({
-      name: "OpenTask",
-      delimiter: "🔍",
-      scopes: ["loop"],
-      process: async (context: any, scope: string, obj: any) => {
-        
-      }
-    });
-
-    this.responders.push({
-      name: "Error",
-      delimiter: "⛔",
-      scopes: ["init"],
-      process: async (context: any, scope: string, obj: any) => {
-        
-      }
-    });
-
-    this.responders.push({
-      name: "finish",
-      exclude: true,
-      scopes: ["post"],
-      process: finishCommandHandler
-    });
-
-  }
-
-  /**
-   * handle the user request
-   * @param userRequest 
-   * @returns 
-   */
-	async handleUserRequest(userRequest: string) {
-
-		if (!this.projectFolder) { throw new Error('No project folder found'); }
-
-		// get the project folder
-		process.chdir(this.projectFolder);
-		this.initialRequest = userRequest;
-
-		// add the user request to the input
-		this.addMessageToInputBuffer({
-			role: 'user',
-			content: `${userRequest}`
-		});
-    if(this.variables) {
-      const v = this.variables.find(v => v.name && v.name === '📢');
-      if(v) { v.value = userRequest; }
     }
-
-		// execute the user request
-		return await this.execute(this.semanticActionHandlers);
-	}
-
-  output(msg: string) { 
-    if(this.writeEmitter) this.writeEmitter?.fire(msg); 
-    else console.log(msg);
+    return await callLLM();
   }
 
-  outputln(msg: string) { this.output(msg+'\r\n'); }
-
-}
-
-const addToCommandHistory = (val: string, context: any) => {
-    const commandTasks = context.arrays.find((a: any) => a.delimiter === "💻");
-    commandTasks.value = !commandTasks.value ? [] : commandTasks.value;
-    commandTasks.value.push(val);
-}
-
-const announcedHandler = async (context: any, scope: string, obj: any) => {
-  const cmd = obj.command, msg = obj.message.join('\n');
-  context.addMessageToInputBuffer({ role: 'assistant', content: `${cmd} ${msg}` });
-  console.log(`${cmd} ${msg}\r\n`);
-  addToCommandHistory(`${cmd} ${msg}`, context);
-}
-
-const bashCommandHandler = async (context: any, scope: string, obj: any) => {
-  const cmd = obj.command;
-  const msg = obj.message.join('\n');
-  context.addMessageToInputBuffer({ role: 'assistant', content: `${cmd} ${msg}` });
-  console.log(`${cmd} ${msg}\r\n`);
-  
-  const result = await executeShellCommands(obj.message[0]);
-  console.log(`${result}\r\n`);
-  context.addMessageToInputBuffer({ role: 'user', content: result });
-
-  addToCommandHistory(`${cmd} ${msg}`, context);
-}
-
-const fileCommandHandler = async (context: any, scope: string, obj: any) => {
-
-    const messageCommands = context.messageCommands.filter((cmd: any) => cmd.command === '💽');
-  for (let i = 0; i < messageCommands.length; i++) {
-    const obj = messageCommands[i];
-    const firstLine = obj.message[0];
-    const fullPath = path.join(context.projectFolder, firstLine);
-    const fileContents = obj.message.slice(1).join('\n');
-    writeFile(fullPath, fileContents);
-
-    context.addMessageToInputBuffer({ role: 'assistant', content: `💽 ${fullPath}` });
-    context.addMessageToInputBuffer({ role: 'user', content: `💽 ${fullPath} saved` });
-    console.log(`💽 ${fullPath} saved`);
-
-    addToCommandHistory(`${firstLine}`, context);
-  }
-}
-
-const diffCommandHandler = async (context: any, scope: string, obj: any) => {
-  const messageCommands = context.messageCommands.filter((cmd: any) => cmd.command === '💠');
-  for (let i = 0; i < messageCommands.length; i++) {
-
-    const obj = messageCommands[i];
-    const cmd = obj.command;
-    const firstLine = obj.message[0];
-    const fullPath = path.join(context.projectFolder, firstLine);
-    const diffpatch = obj.message.slice(1).join('\n');
-    
-    context.addMessageToInputBuffer({ role: 'assistant', content: `${cmd} ${obj.command.join('\n')}` });
-    console.log(`${cmd} ${firstLine}\r\n${diffpatch.split('\n').join('\r\n')}\r\n`);
-    const patchedFileText = applyPatch(fullPath, diffpatch);
-    console.log(`${cmd} ${firstLine}\r\n${patchedFileText.split('\n').join('\r\n')}\r\n`);
-    writeFile(fullPath, patchedFileText);
-    context.addMessageToInputBuffer({ role: 'user', content: `💠 APPLIED ${fullPath}` });
-    console.log(`💠 APPLIED ${fullPath}`);
-
-    addToCommandHistory(`${firstLine}`, context);
-  }
-}
-
-const fileRequestCommandHandler = async (context: any, scope: string, obj: any) => {
-  const cmd = obj.command;
-  const msg = obj.message.join('\n');
-  const msgparts = msg.split(' ');
-  const lineStart = msgparts.length > 1 ? msgparts[1] : 0;
-  const lineEnd = msgparts.length > 2 ? msgparts[2] : msgparts.length;
-  const projectFolder = context.projectFolder;
-  const fullPath = path.join(projectFolder, msg);
-  let fileStr = '';
-  context.addMessageToInputBuffer({ role: 'assistant', content: `${cmd} ${msg}` });
-  console.log(`${cmd} ${msg}\r\n`);
-  try {
-    const file = await readFile(fullPath) as any
-    const fileArr = file.split('\n');
-    if (lineStart !== 0 || lineEnd !== 0) {
-      // remove anything after the 100th line
-      fileStr = fileArr.slice(lineStart, lineEnd).join('\n');
-      fileStr += `...lines ${lineStart} to ${lineEnd} of ${fileArr.length}`;
+  onProcessMessages(messages: any, recs: any) {
+    for (const message of messages) {
+      const delimiter = config.delimiters.find(
+        (d) => d.emoji === message.command
+      );
+      if (delimiter) {
+        const hasFileRequest = messages.find(
+          (m: any) => m.command === "📤"
+        );
+        for (const handler of delimiter.handlers) {
+          handler(this, message);
+        }
+        // assume completion if there is no file request
+        this.completed = !hasFileRequest;
+      }
     }
-    
-    addToCommandHistory(`${cmd} ${msg}`, context);
-
-    fileStr = fileStr.split('\n').join('\r\n');
-    context.addMessageToInputBuffer({ role: 'user', content: `${msg}\n${fileStr}\n` });
-    console.log(`${msg}\r\n${fileStr}\r\n`);
-
-  } catch (e) {
-    context.addMessageToInputBuffer({ role: 'user', content: `${msg} NOT FOUND\r\n` });
-    console.log(`${msg} NOT FOUND\r\n`);
   }
-}
-
-const finishCommandHandler = async (context: any, scope: string, obj: any) => {
-  if(scope !== 'post') return;
-
-  const openTasks = context.arrays.find((a: any) => a.delimiter === "📬").value;
-  const closedTasks = context.arrays.find((a: any) => a.delimiter === "📭").value;
-  let currentTasks = context.arrays.find((a: any) => a.delimiter === "🔍").value;
-  const commandTasks = context.arrays.find((a: any) => a.delimiter === "💻").value;
-
-  if(!currentTasks.length && openTasks.length) {
-    currentTasks = openTasks[0];
-  } else currentTasks = currentTasks.map((o:any)=>o.message).message;
-
-  if (openTasks.length !== 0) {
-    const response = [
-      context.inputBuffer[0].content,
-      "💻 " + commandTasks.map((o:any)=>o.message).join('\n'),
-      "📬 " + openTasks.map((o:any)=>o.message).join('\n'),
-      "📭 " + closedTasks.map((o:any)=>o.message).join('\n'),
-      "🔍 " + currentTasks.message.join('\n').trim()
-    ]
-    context.addMessageToInputBuffer({ role: 'user', content: + '\n' + response.join('\n') + '\n'});
-    console.log(response.join('\n'));
-  } else {
-    context.clearInputBuffer();
-    context.interrupt();
-  }
-}
-
-function writeFile(filePath: string, value: string) {
-  fs.writeFileSync(filePath, value);
-}
-
-async function readFile(filePath: string) {
-  return new Promise((resolve, reject) => {
-    fs.readFile(filePath, (err, data) => {
-      if (err) { reject(err); }
-      resolve(data);
-    });
-  });
 }
