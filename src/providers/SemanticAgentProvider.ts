@@ -25,8 +25,7 @@ export default class SemanticAgentProvider {
      * @param writeEmitter 
      * @returns 
      */
-    public createSemanticAgent(writeEmitter: any): SemanticAgent {
-        const projectRoot = this.context.workspace[0].uri.fsPath;
+    public createSemanticAgent(projectRoot: string, writeEmitter: any): SemanticAgent {
         const semanticAgent = new SemanticAgent(this.core, projectRoot, writeEmitter);
         this.semanticAgents.push(semanticAgent);
         return semanticAgent;
