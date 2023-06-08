@@ -31,8 +31,8 @@ export default class ConversationManager implements LLMHistoryManager {
      * @returns 
      */
     static getInstance(conversationsFile: string) {
-        const instance = this._instance || (this._instance = new this(conversationsFile));
-        return instance;
+        this._instance = new this(conversationsFile)
+        return this._instance;
     }
 
     /**
@@ -87,6 +87,13 @@ export function activate(context: vscode.ExtensionContext) {
     const projectPath = vscode.workspace.workspaceFolders[0].uri.fsPath;
     const conversationsFile = path.join(projectPath, 'history.json');
     ConversationManager.getInstance(conversationsFile);
+    // update conversatiohn manager when workspace is changed
+    vscode.workspace.onDidChangeWorkspaceFolders(() => {
+        if(!vscode.workspace.workspaceFolders)  { return; }
+        const projectPath = vscode.workspace.workspaceFolders[0].uri.fsPath;
+        const conversationsFile = path.join(projectPath, 'history.json');
+        ConversationManager.getInstance(conversationsFile);
+    });
     log('ConversationManager activated');
 }
 

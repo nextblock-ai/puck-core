@@ -21,9 +21,9 @@ export async function activate(context: vscode.ExtensionContext) {
 	SemanticAgentProvider.activate(gpt4Core, context);
 	ConversationManager.activate(context);
 	AppFooterContent.activate();
-
 	return {
 		core: gpt4Core,
+		appFooter: AppFooterContent.getInstance(),
 		SemanticAgentProvider: SemanticAgentProvider,
 	}
 	
