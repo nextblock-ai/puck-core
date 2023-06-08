@@ -9,14 +9,18 @@ import ConversationManager  from "./manager/ConversationManager";
 // GPT-4 Core class that implements LLMCoreInterface
 class GPT4Core implements LLMCoreInterface, LLM {
     name = "gpt4";
+    manager: ConversationManager;
     settings = {
         key: '',
         temperature: 1,
         max_tokens: 2048,
         top_p: 1
     };
-    manager = ConversationManager.getInstance('conversation.json');
     history: LLMHistoryEntry[] = [];
+
+    constructor(convwersationManager: ConversationManager) {
+        this.manager = convwersationManager;
+    }
 
     // Send request to GPT-4 and receive a response
     async sendRequest(request: Conversation): Promise<LLMSession> {

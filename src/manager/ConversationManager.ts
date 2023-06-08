@@ -86,7 +86,7 @@ export function activate(context: vscode.ExtensionContext) {
     if(!vscode.workspace.workspaceFolders) { return; }
     const projectPath = vscode.workspace.workspaceFolders[0].uri.fsPath;
     const conversationsFile = path.join(projectPath, 'history.json');
-    ConversationManager.getInstance(conversationsFile);
+    const instance = ConversationManager.getInstance(conversationsFile);
     // update conversatiohn manager when workspace is changed
     vscode.workspace.onDidChangeWorkspaceFolders(() => {
         if(!vscode.workspace.workspaceFolders)  { return; }
@@ -95,6 +95,7 @@ export function activate(context: vscode.ExtensionContext) {
         ConversationManager.getInstance(conversationsFile);
     });
     log('ConversationManager activated');
+    return instance;
 }
 
 // Called when the extension is deactivated

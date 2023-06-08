@@ -14,12 +14,12 @@ import * as ConversationManager from './manager/ConversationManager';
 
 export async function activate(context: vscode.ExtensionContext) {
 
-	const gpt4Core = new GPT4Core();
+	const manager = ConversationManager.activate(context);
+	const gpt4Core = new GPT4Core(manager as any);
 	outputLog.activate(context, 'puck.log');
 	commands.activate(context);
 	GPTChatProvider.activate(context);
 	SemanticAgentProvider.activate(gpt4Core, context);
-	ConversationManager.activate(context);
 	AppFooterContent.activate();
 	return {
 		core: gpt4Core,
