@@ -2,7 +2,7 @@
   "name": "puck-core",
   "displayName": "Puck Core",
   "description": "Core module of the Puck AI development environment. Automatically installed when a Puck extension is installed.",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "publisher": "NextBlock",
   "repository": {
     "type": "git",

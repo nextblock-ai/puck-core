@@ -165,7 +165,7 @@ const config = {
       // 📦 <command>: Execute this command
       "name": "Command",
       "emoji": "📦",
-      "handlers": [(semanticPrompt: SemanticPrompt, message: any) => {
+      "handlers": [async (semanticPrompt: SemanticPrompt, message: any) => {
 
         // add the command message from the assistant to the conversation
         const [bashCommand] = message.message;
@@ -173,7 +173,7 @@ const config = {
         tw(semanticPrompt, `📦 ${bashCommand}`);
         process.chdir(semanticPrompt.projectRoot);
         // execute the command
-        const result = executeShellCommands(bashCommand);
+        const result = await executeShellCommands(bashCommand);
         if (result) {
           semanticPrompt.messages.push({
             role: "user",
