@@ -108,8 +108,15 @@ const config = {
         // save the file
         let [filename, ...filecontent] = message.message;
         const file = semanticPrompt._relPath(filename)
-        fs.writeFileSync(file, filecontent.join("\n"));
-
+        if(semanticPrompt.apply) { 
+          fs.writeFileSync(file, filecontent.join("\n")); 
+        }
+        else {
+          semanticPrompt.result.push({
+            filename: file,
+            filecontent: filecontent.join("\n"),
+          });
+        }
       }],
     },
     {
@@ -122,11 +129,14 @@ const config = {
         updateSemanticPrompt(semanticPrompt, config.delimiters[1].emoji, message.message);
         tw(semanticPrompt, `📩 ${message.message[0]}\n${message.message[1]}`);
         const [filename, ...diff] = message.message;
-        // add the patch to the result - we'll process it later
-        semanticPrompt.result.push({
-          filename: semanticPrompt._relPath(filename),
-          diff: diff.join("\n"),
-        });
+        if(semanticPrompt.apply) { }
+        else {
+          // add the patch to the result - we'll process it later
+          semanticPrompt.result.push({
+            filename: semanticPrompt._relPath(filename),
+            diff: diff.join("\n"),
+          });
+        }
       }],
     },
     {
@@ -139,11 +149,15 @@ const config = {
         const [announcement] = message.message;
         updateSemanticPrompt(semanticPrompt, config.delimiters[2].emoji, message.message);
         tw(semanticPrompt, `📢 ${announcement}`);
-        // add the message to the result
-        semanticPrompt.result.push({
-          announcement: announcement
-        });
+        if(semanticPrompt.apply) { 
 
+        }
+        else {
+          // add the message to the result
+          semanticPrompt.result.push({
+            announcement: announcement
+          });
+        }
       }],
     },
     {
@@ -173,11 +187,17 @@ const config = {
         tw(semanticPrompt, `📦 ${bashCommand}`);
         process.chdir(semanticPrompt.projectRoot);
         // execute the command
-        const result = await executeShellCommands(bashCommand);
-        if (result) {
-          semanticPrompt.messages.push({
-            role: "user",
-            content: `📦 ${bashCommand}\n${result}`,
+        if(semanticPrompt.apply) { 
+          const result = await executeShellCommands(bashCommand);
+          if (result) {
+            semanticPrompt.messages.push({
+              role: "user",
+              content: `📦 ${bashCommand}\n${result}`,
+            });
+          }
+        } else {
+          semanticPrompt.result.push({
+            command: bashCommand
           });
         }
       }],
@@ -275,6 +295,7 @@ export default class SemanticPrompt {
   projectRoot: string = "";
   writeEmitter: any;
   _ohmParser: any;
+  _apply: any;
   core: any;
 
   public _relPath(str: string) { return path.join(this.projectRoot, str); }
@@ -312,6 +333,7 @@ export default class SemanticPrompt {
     this.writeEmitter = writeEmitter;
     this.projectRoot = projectRoot;
     this.prompt = _prompt || "";
+    this._apply = true;
     for (const delimiter of config.delimiters) {
       this.actions[delimiter.name] = (delimiter: any) => {
         return delimiter;
@@ -326,6 +348,8 @@ export default class SemanticPrompt {
   get semanticAction(): Ohm.Semantics { return this.semantics; }
   get grammar(): Ohm.Grammar { return this._grammar; }
   get semantics(): Ohm.Semantics { return this._semantics; }
+  get apply(): boolean { return this._apply; }
+  set apply(apply: boolean) { this._apply = apply; }
 
   private _parseCommands(text: string, legalEmojis: string[]) {
     const lines = text.split('\n');
