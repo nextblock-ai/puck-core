@@ -165,14 +165,23 @@ const config = {
       "name": "FileRequest",
       "emoji": "📤",
       "handlers": [(semanticPrompt: SemanticPrompt, message: any) => {
-
         // add the file request message from the assistant to the conversation
         const [fileRequest] = message.message;
         updateSemanticPrompt(semanticPrompt, config.delimiters[3].emoji, message.message);
         tw(semanticPrompt, `📤 ${fileRequest}`);
         // respond with the file contents
-        semanticPrompt.messages.push(generateFileResponse(semanticPrompt, fileRequest));
-
+        // if this is a fdolder then respond with the all the files in the folder
+        if (fs.existsSync(semanticPrompt._relPath(fileRequest))) {
+          const stats = fs.statSync(semanticPrompt._relPath(fileRequest));
+          if (stats.isDirectory()) {
+            const files = fs.readdirSync(semanticPrompt._relPath(fileRequest));
+            for (const file of files) {
+              semanticPrompt.messages.push(generateFileResponse(semanticPrompt, path.join(fileRequest, file)));
+            }
+          } else {
+            semanticPrompt.messages.push(generateFileResponse(semanticPrompt, fileRequest));
+          }
+        }
       }],
     },
     {
