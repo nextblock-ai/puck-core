@@ -109,6 +109,8 @@ const config = {
         let [filename, ...filecontent] = message.message;
         const file = semanticPrompt._relPath(filename)
         if(semanticPrompt.apply) { 
+          // remove  any line that starts with ``` to the end of the line
+          filecontent = filecontent.map((line: string) => line.replace(/```.*$/, ''));
           fs.writeFileSync(file, filecontent.join("\n")); 
         }
         else {
