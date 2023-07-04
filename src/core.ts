@@ -22,6 +22,10 @@ class GPT4Core implements LLMCoreInterface, LLM {
         this.manager = convwersationManager;
     }
 
+    getApiKey(): string {
+        return this._getOpenAIKey();
+    }
+
     // Send request to GPT-4 and receive a response
     async sendRequest(request: Conversation): Promise<LLMSession> {
         const query = this._getConversationObject(request);
