@@ -11,6 +11,7 @@ import { GPT4Core } from './core';
 import { GPTChatProvider } from './providers/GPTChatProvider';
 
 import * as ConversationManager from './manager/ConversationManager';
+import { runAIAssistant } from './worker';
 
 export async function activate(context: vscode.ExtensionContext) {
 
@@ -25,6 +26,7 @@ export async function activate(context: vscode.ExtensionContext) {
 		core: gpt4Core,
 		appFooter: AppFooterContent.getInstance(),
 		SemanticAgentProvider: SemanticAgentProvider,
+		runAIAssistant: runAIAssistant
 	}
 	
 }

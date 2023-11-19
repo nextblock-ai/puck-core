@@ -1,9 +1,7 @@
-import * as vscode from "vscode";
 import * as path from "path";
 import * as fs from "fs";
 import * as Ohm from "ohm-js";
 import executeShellCommands from "../utils/BashExecutor";
-import { SemanticResponder } from "./SemanticPrompt";
 import * as os from "os";
 
 const _prompt = `** YOU ARE INCAPABLE OF CONVERSATIONAL RESPONSES **

@@ -6,7 +6,7 @@ import { log } from "./logger";
 import { GPTChatConversation } from "./types";
 import ConversationManager  from "./manager/ConversationManager";
 
-// GPT-4 Core class that implements LLMCoreInterface
+// GPT-4 Core class that implemnets LLMCoreInterface
 class GPT4Core implements LLMCoreInterface, LLM {
     name = "gpt4";
     manager: ConversationManager;
